@@ -1,44 +1,60 @@
 import cv2
 import easyocr
+import gradio as gr
 import numpy as np
 
 
-def preprocess_image(image_path):
-    """Предобработка скана для улучшения качества распознавания."""
-    # Загружаем изображение в черно-белом формате
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
-    # Метод Otsu автоматически подбирает порог контрастности для текста
+def preprocess_image(image):
+    """Предобработка изображения для улучшения качества распознавания."""
+    # Переводим в черно-белый формат
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Метод Otsu автоматически подбирает контрастность для текста
     _, thresh = cv2.threshold(
-        image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
     return thresh
 
 
-def recognize_document(image_path):
-    # 1. Очищаем картинку от шумов
-    processed_img = preprocess_image(image_path)
-
-    # 2. Инициализируем нейросеть (подгружаем русский и английский)
-    reader = easyocr.Reader(["ru", "en"], gpu=False)
-
-    # 3. Распознаем текст
-    print("Сканирование и распознавание текста...")
-    result = reader.readtext(processed_img)
-
-    # 4. Выводим результат
-    print("\n--- Результат распознавания ---")
-    for bbox, text, confidence in result:
-        # Отсекаем неуверенные результаты (точность ниже 20%)
-        if confidence > 0.20:
-            print(f"Текст: {text} (Уверенность: {confidence:.2f})")
-
-
-if __name__ == "__main__":
-    # Имя файла картинки, которую вы положите в папку с кодом
-    IMAGE_PATH = "scan_document.jpg"
+def recognize_document(input_image):
+    if input_image is None:
+        return "Пожалуйста, загрузите изображение文档."
 
     try:
-        recognize_document(IMAGE_PATH)
+        # 1. Очищаем картинку от шумов
+        processed_img = preprocess_image(input_image)
+
+        # 2. Инициализируем нейросеть
+        reader = easyocr.Reader(["ru", "en"], gpu=False)
+
+        # 3. Распознаем текст
+        result = reader.readtext(processed_img)
+
+        # 4. Собираем текст в одну строку
+        recognized_lines = []
+        for bbox, text, confidence in result:
+            if confidence > 0.20:
+                recognized_lines.append(text)
+
+        if not recognized_lines:
+            return "Текст на документе не найден или изображение слишком размыто."
+
+        return "\n".join(recognized_lines)
+
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        return f"Произошла ошибка при обработке: {str(e)}"
+
+
+# Создаем веб-интерфейс программы
+interface = gr.Interface(
+    fn=recognize_document,
+    inputs=gr.Image(label="Загрузите скан или фото документа"),
+    outputs=gr.Textbox(label="Распознанный текст документа", lines=10),
+    title="Нейросеть распознавания документов (Гостиничное дело)",
+    description="Система для автоматического считывания паспортных данных и текстов договоров.",
+)
+
+if __name__ == "__main__":
+    # Запуск локального веб-сервера
+    interface.launch()
+
+
